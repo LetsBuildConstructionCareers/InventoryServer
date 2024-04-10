@@ -1,5 +1,6 @@
 CREATE TABLE items (
     barcode_id STRING PRIMARY KEY,
+    name STRING,
     picture_path STRING
 );
 
