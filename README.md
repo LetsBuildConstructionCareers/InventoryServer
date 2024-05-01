@@ -8,7 +8,7 @@ Primarily provides a fairly thin set of REST endpoints for a SQL database.
 The intended way to build and deploy is with Docker:
 
 ```bash
-docker build --tag='test_inventory_server
+docker build --tag='test_inventory_server' .
 docker run -i -p 5000:5000 'test_inventory_server'
 ```
 
