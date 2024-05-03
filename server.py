@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from flask import Flask, jsonify, request, send_from_directory
 import os.path
+import time
 import sqlite3
 import sys
 import uuid
@@ -10,12 +11,36 @@ db_name = None
 picture_directory = None
 
 @dataclass
+class Item:
+    barcode_id: str
+    short_id: str
+    name: str
+    picture_path: str
+    description: str
+
+def adapt_item(item):
+    return f'{item.barcode_id};{item.short_id};{item.name};{item.picture_path};{item.description}'
+
+def convert_item(item):
+    barcode_id, short_id, name, picture_path, description = list(map(str, s.split(b";")))
+    return Item(barcode_id, short_id, name, picture_path, description)
+
+sqlite3.register_adapter(Item, adapt_item)
+sqlite3.register_converter("item", convert_item)
+
+@dataclass
 class User:
     barcode_id: str
     name: str
     company: str
     picture_path: str
     description: str
+
+@dataclass
+class ToolshedCheckout:
+    item_id: str
+    user_id: str
+    unix_time: int
 
 def adapt_user(user):
     return f"{user.barcode_id};{user.name};{user.company};{user.description}"
@@ -72,9 +97,36 @@ def upload_item(barcode_id):
     con.commit()
     return '', 200
 
+def get_full_location_of_item(item_id):
+    con = sqlite3.connect(db_name)
+    cur = con.cursor()
+    res = cur.execute('SELECT container_id FROM containers WHERE item_id = ?', (item_id,))
+    container_ids = res.fetchone()
+    if container_ids is not None and len(container_ids) > 0:
+        return [container_ids[0]] + get_full_location_of_item(container_ids[0])
+    else:
+        return []
+
+@app.route('/inventory/api/v1.0/item-parent/<string:item_id>', methods=['GET'])
+def get_parent_of_item(item_id):
+    full_location = get_full_location_of_item(item_id)
+    if len(full_location) == 0:
+        return jsonify('')
+    container_id = full_location[0]
+    return jsonify(container_id)
+
 def does_item_exist(sql_cursor, barcode_id):
     res = sql_cursor.execute('SELECT count(*) FROM items WHERE barcode_id = ?', (barcode_id,))
     return res.fetchone()[0] > 0
+
+@app.route('/inventory/api/v1.0/containers/<string:container_id>', methods=['GET'])
+def get_items_in_container(container_id):
+    assert request.method == 'GET'
+    con = sqlite3.connect(db_name)
+    con.row_factory = lambda cursor, row: Item(*row)
+    cur = con.cursor()
+    items = cur.execute('SELECT items.* FROM items INNER JOIN containers ON items.barcode_id = containers.item_id WHERE container_id = ?', (container_id,))
+    return jsonify(list(items))
 
 @app.route('/inventory/api/v1.0/containers/<string:container_id>', methods=['POST'])
 def add_items_to_container(container_id):
@@ -90,6 +142,28 @@ def add_items_to_container(container_id):
     con.commit()
     return '', 200
 
+@app.route('/inventory/api/v1.0/containers/<string:container_id>/<string:item_id>', methods=['DELETE'])
+def remove_item_from_container(container_id, item_id):
+    assert request.method == 'DELETE'
+    con = sqlite3.connect(db_name)
+    cur = con.cursor()
+    cur.execute('DELETE FROM containers WHERE container_id = :container_id AND item_id = :item_id', {'container_id': container_id, 'item_id': item_id})
+    con.commit()
+    return '', 200
+
+@app.route('/inventory/api/v1.0/toolshed-checkout', methods=['POST'])
+def checkout_from_toolshed():
+    assert request.method == 'POST'
+    toolshed_checkout = request.json
+    toolshed_checkout['unix_time'] = int(time.time())
+    toolshed_checkout = ToolshedCheckout(**toolshed_checkout)
+    con = sqlite3.connect(db_name)
+    cur = con.cursor()
+    cur.execute('INSERT OR REPLACE INTO toolshed_checkouts (item_id, user_id, unix_time) VALUES (:item_id, :user_id, :unix_time)',
+            {'item_id': toolshed_checkout.item_id, 'user_id': toolshed_checkout.user_id, 'unix_time': toolshed_checkout.unix_time})
+    con.commit()
+    return '', 200
+
 @app.route('/inventory/api/v1.0/users/<string:barcode_id>', methods=['GET'])
 def get_user(barcode_id):
     con = sqlite3.connect(db_name)
@@ -101,6 +175,14 @@ def get_user(barcode_id):
     print(retval)
     return retval
 
+@app.route('/inventory/api/v1.0/user-picture/<string:user_id>', methods=['GET'])
+def get_user_picture(user_id):
+    con = sqlite3.connect(db_name)
+    cur = con.cursor()
+    res = cur.execute('SELECT picture_path FROM users WHERE barcode_id = ?', (user_id,))
+    [picture_path] = res.fetchone()
+    return send_from_directory(picture_directory, picture_path)
+
 @app.route('/inventory/api/v1.0/user-picture/<string:user_id>', methods=['POST'])
 def uploadUserPicture(user_id):
     assert request.method == 'POST'
@@ -110,6 +192,26 @@ def uploadUserPicture(user_id):
     con = sqlite3.connect(db_name)
     cur = con.cursor()
     cur.execute('UPDATE users SET picture_path = :picture_path WHERE barcode_id = :barcode_id', {'barcode_id': user_id, 'picture_path': unique_filename})
+    con.commit()
+    return '', 200
+
+@app.route('/inventory/api/v1.0/user-checkin/<string:user_id>', methods=['POST'])
+def checkin_user(user_id):
+    assert request.method == 'POST'
+    unix_time = int(time.time())
+    con = sqlite3.connect(db_name)
+    cur = con.cursor()
+    cur.execute('INSERT OR REPLACE INTO user_checkins (user_id, unix_time) VALUES (:user_id, :unix_time)', {'user_id': user_id, 'unix_time': unix_time})
+    con.commit()
+    return '', 200
+
+@app.route('/inventory/api/v1.0/user-checkout/<string:user_id>', methods=['POST'])
+def checkout_user(user_id):
+    assert request.method == 'POST'
+    unix_time = int(time.time())
+    con = sqlite3.connect(db_name)
+    cur = con.cursor()
+    cur.execute('INSERT OR REPLACE INTO user_checkouts (user_id, unix_time) VALUES (:user_id, :unix_time)', {'user_id': user_id, 'unix_time': unix_time})
     con.commit()
     return '', 200
 

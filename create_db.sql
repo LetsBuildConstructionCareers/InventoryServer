@@ -11,7 +11,18 @@ CREATE TABLE users (
     name STRING,
     company STRING,
     picture_path STRING,
+    user_type STRING,
     description TEXT
+);
+
+CREATE TABLE user_checkins (
+    user_id STRING,
+    unix_time INTEGER
+);
+
+CREATE TABLE user_checkouts (
+    user_id STRING,
+    unix_time INTEGER
 );
 
 CREATE TABLE containers (
