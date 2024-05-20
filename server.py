@@ -211,6 +211,17 @@ def get_items_checked_out_by_user(user_id):
             WHERE toolshed_checkins.checkout_id IS NULL AND toolshed_checkouts.user_id = ?', (user_id,))
     return jsonify(list(items))
 
+@app.route('/inventory/api/v1.0/users-toolshed-checkout-outstanding', methods=['GET'])
+def get_users_with_outstanding_toolshed_checkouts():
+    con = sqlite3.connect(db_name)
+    con.row_factory = lambda cursor, row: User(*row)
+    cur = con.cursor()
+    users = cur.execute('SELECT users.* FROM toolshed_checkouts \
+            LEFT JOIN toolshed_checkins ON toolshed_checkouts.checkout_id = toolshed_checkins.checkout_id \
+            INNER JOIN users ON toolshed_checkouts.user_id = users.barcode_id \
+            WHERE toolshed_checkins.checkout_id IS NULL')
+    return jsonify(list(users))
+
 @app.route('/inventory/api/v1.0/users/<string:barcode_id>', methods=['GET'])
 def get_user(barcode_id):
     con = sqlite3.connect(db_name)
