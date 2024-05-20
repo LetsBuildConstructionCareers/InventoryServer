@@ -1,5 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from flask import Flask, jsonify, request, send_from_directory
+from typing import Optional
 import os.path
 import time
 import sqlite3
@@ -38,9 +39,21 @@ class User:
 
 @dataclass
 class ToolshedCheckout:
-    item_id: str
-    user_id: str
-    unix_time: int
+    checkout_id: Optional[int] = None
+    item_id: Optional[str] = None
+    user_id: Optional[str] = None
+    unix_time: Optional[int] = None
+    override_justification: Optional[str] = None
+
+@dataclass
+class ToolshedCheckin:
+    checkin_id: Optional[int] = None
+    checkout_id: Optional[int] = None
+    item_id: Optional[str] = None
+    user_id: Optional[str] = None
+    unix_time: Optional[int] = None
+    override_justification: Optional[str] = None
+    description: Optional[str] = None
 
 def adapt_user(user):
     return f"{user.barcode_id};{user.name};{user.company};{user.description}"
@@ -52,27 +65,27 @@ def convert_user(s):
 sqlite3.register_adapter(User, adapt_user)
 sqlite3.register_converter("user", convert_user)
 
-def convert_row_to_item(row):
-    [barcode_id, name, picture_path] = row
-    retval =  {'barcode_id': barcode_id, 'name': name}
-    print(retval)
-    return retval
+def row_to_item_factory(cursor, row):
+    return Item(*row)
 
 @app.route('/inventory/api/v1.0/items', methods=['GET'])
 def get_items():
     con = sqlite3.connect(db_name)
+    con.row_factory = row_to_item_factory
     cur = con.cursor()
-    res = cur.execute('SELECT * FROM items;')
-    item_list = [convert_row_to_item(row) for row in res]
+    item_list = cur.execute('SELECT * FROM items;')
     return jsonify({'items': item_list})
 
 @app.route('/inventory/api/v1.0/items/<string:barcode_id>', methods=['GET'])
 def get_item(barcode_id):
     print(barcode_id)
     con = sqlite3.connect(db_name)
+    con.row_factory = row_to_item_factory
     cur = con.cursor()
     res = cur.execute('SELECT * FROM items WHERE barcode_id = ?', (barcode_id,))
-    retval = jsonify(convert_row_to_item(res.fetchone()))
+    item = res.fetchone()
+    print(item)
+    retval = jsonify(item)
     print(retval)
     return retval
 
@@ -161,6 +174,29 @@ def checkout_from_toolshed():
     cur = con.cursor()
     cur.execute('INSERT OR REPLACE INTO toolshed_checkouts (item_id, user_id, unix_time) VALUES (:item_id, :user_id, :unix_time)',
             {'item_id': toolshed_checkout.item_id, 'user_id': toolshed_checkout.user_id, 'unix_time': toolshed_checkout.unix_time})
+    con.commit()
+    return '', 200
+
+@app.route('/inventory/api/v1.0/toolshed-checkout/<string:barcode_id>/last-outstanding', methods=['GET'])
+def get_last_outstanding_checkout(barcode_id):
+    con = sqlite3.connect(db_name)
+    con.row_factory = lambda cursor, row: ToolshedCheckout(*row)
+    cur = con.cursor()
+    res = cur.execute('SELECT toolshed_checkouts.* FROM toolshed_checkouts LEFT JOIN toolshed_checkins ON toolshed_checkouts.checkout_id = toolshed_checkins.checkout_id WHERE toolshed_checkins.checkout_id IS NULL AND toolshed_checkouts.item_id = ? AND toolshed_checkouts.checkout_id = (SELECT checkout_id FROM toolshed_checkouts ORDER BY unix_time DESC LIMIT 1)', (barcode_id,))
+    outstanding_checkout = res.fetchone()
+    print(outstanding_checkout)
+    return jsonify(outstanding_checkout)
+
+@app.route('/inventory/api/v1.0/toolshed-checkin', methods=['POST'])
+def checkin_to_toolshed():
+    assert request.method == 'POST'
+    toolshed_checkin = request.json
+    print(toolshed_checkin)
+    toolshed_checkin['unix_time'] = int(time.time())
+    toolshed_checkin = ToolshedCheckin(**toolshed_checkin)
+    con = sqlite3.connect(db_name)
+    cur = con.cursor()
+    cur.execute('INSERT OR REPLACE INTO toolshed_checkins (checkout_id, item_id, user_id, unix_time, override_justification, description) VALUES (:checkout_id, :item_id, :user_id, :unix_time, :override_justification, :description)', asdict(toolshed_checkin))
     con.commit()
     return '', 200
 

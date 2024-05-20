@@ -41,15 +41,20 @@ CREATE TABLE locations (
 );
 
 CREATE TABLE toolshed_checkouts (
-    item_id STRING,
-    user_id STRING,
-    unix_time INTEGER
-);
-
-CREATE TABLE toolshed_checkins (
+    checkout_id INTEGER PRIMARY KEY AUTOINCREMENT,
     item_id STRING,
     user_id STRING,
     unix_time INTEGER,
+    override_justification STRING
+);
+
+CREATE TABLE toolshed_checkins (
+    checkin_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    checkout_id INTEGER,
+    item_id STRING,
+    user_id STRING,
+    unix_time INTEGER,
+    override_justification STRING,
     description TEXT
 );
 
