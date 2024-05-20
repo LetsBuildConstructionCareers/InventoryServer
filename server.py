@@ -200,6 +200,17 @@ def checkin_to_toolshed():
     con.commit()
     return '', 200
 
+@app.route('/inventory/api/v1.0/users/<string:user_id>/toolshed-checkout-outstanding', methods=['GET'])
+def get_items_checked_out_by_user(user_id):
+    con = sqlite3.connect(db_name)
+    con.row_factory = row_to_item_factory
+    cur = con.cursor()
+    items = cur.execute('SELECT items.* FROM toolshed_checkouts \
+            LEFT JOIN toolshed_checkins ON toolshed_checkouts.checkout_id = toolshed_checkins.checkout_id \
+            INNER JOIN items ON toolshed_checkouts.item_id = items.barcode_id \
+            WHERE toolshed_checkins.checkout_id IS NULL AND toolshed_checkouts.user_id = ?', (user_id,))
+    return jsonify(list(items))
+
 @app.route('/inventory/api/v1.0/users/<string:barcode_id>', methods=['GET'])
 def get_user(barcode_id):
     con = sqlite3.connect(db_name)
