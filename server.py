@@ -1,5 +1,6 @@
 from dataclasses import asdict, dataclass
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, abort
+from functools import wraps
 from typing import Optional
 import os.path
 import time
@@ -10,6 +11,7 @@ import uuid
 app = Flask(__name__)
 db_name = None
 picture_directory = None
+auth_value = None
 
 @dataclass
 class Item:
@@ -68,7 +70,24 @@ sqlite3.register_converter("user", convert_user)
 def row_to_item_factory(cursor, row):
     return Item(*row)
 
+def do_check_auth_header(request):
+    print('Expected Auth: ' + auth_value)
+    print(str(request))
+    sys.stdout.flush()
+    if (request.headers.get('Authorization') == auth_value):
+        return
+    else:
+        abort(401)
+
+def check_auth_header(func):
+    @wraps(func)
+    def decorated_func(*args, **kwargs):
+        do_check_auth_header(request)
+        return func(*args, **kwargs)
+    return decorated_func
+
 @app.route('/inventory/api/v1.0/items', methods=['GET'])
+@check_auth_header
 def get_items():
     con = sqlite3.connect(db_name)
     con.row_factory = row_to_item_factory
@@ -77,6 +96,7 @@ def get_items():
     return jsonify({'items': item_list})
 
 @app.route('/inventory/api/v1.0/items/<string:barcode_id>', methods=['GET'])
+@check_auth_header
 def get_item(barcode_id):
     print(barcode_id)
     con = sqlite3.connect(db_name)
@@ -90,6 +110,7 @@ def get_item(barcode_id):
     return retval
 
 @app.route('/inventory/api/v1.0/item-picture/<string:barcode_id>', methods=['GET'])
+@check_auth_header
 def get_item_pictures(barcode_id):
     con = sqlite3.connect(db_name)
     cur = con.cursor()
@@ -98,6 +119,7 @@ def get_item_pictures(barcode_id):
     return send_from_directory(picture_directory, picture_path)
 
 @app.route('/inventory/api/v1.0/items/<string:barcode_id>', methods=['POST'])
+@check_auth_header
 def upload_item(barcode_id):
     assert request.method == 'POST'
     unique_filename = str(uuid.uuid4())
@@ -121,6 +143,7 @@ def get_full_location_of_item(item_id):
         return []
 
 @app.route('/inventory/api/v1.0/item-parent/<string:item_id>', methods=['GET'])
+@check_auth_header
 def get_parent_of_item(item_id):
     full_location = get_full_location_of_item(item_id)
     if len(full_location) == 0:
@@ -133,6 +156,7 @@ def does_item_exist(sql_cursor, barcode_id):
     return res.fetchone()[0] > 0
 
 @app.route('/inventory/api/v1.0/containers/<string:container_id>', methods=['GET'])
+@check_auth_header
 def get_items_in_container(container_id):
     assert request.method == 'GET'
     con = sqlite3.connect(db_name)
@@ -142,6 +166,7 @@ def get_items_in_container(container_id):
     return jsonify(list(items))
 
 @app.route('/inventory/api/v1.0/containers/<string:container_id>', methods=['POST'])
+@check_auth_header
 def add_items_to_container(container_id):
     assert request.method == 'POST'
     item_ids = request.json
@@ -156,6 +181,7 @@ def add_items_to_container(container_id):
     return '', 200
 
 @app.route('/inventory/api/v1.0/containers/<string:container_id>/<string:item_id>', methods=['DELETE'])
+@check_auth_header
 def remove_item_from_container(container_id, item_id):
     assert request.method == 'DELETE'
     con = sqlite3.connect(db_name)
@@ -165,6 +191,7 @@ def remove_item_from_container(container_id, item_id):
     return '', 200
 
 @app.route('/inventory/api/v1.0/toolshed-checkout', methods=['POST'])
+@check_auth_header
 def checkout_from_toolshed():
     assert request.method == 'POST'
     toolshed_checkout = request.json
@@ -178,6 +205,7 @@ def checkout_from_toolshed():
     return '', 200
 
 @app.route('/inventory/api/v1.0/toolshed-checkout/<string:barcode_id>/last-outstanding', methods=['GET'])
+@check_auth_header
 def get_last_outstanding_checkout(barcode_id):
     con = sqlite3.connect(db_name)
     con.row_factory = lambda cursor, row: ToolshedCheckout(*row)
@@ -188,6 +216,7 @@ def get_last_outstanding_checkout(barcode_id):
     return jsonify(outstanding_checkout)
 
 @app.route('/inventory/api/v1.0/toolshed-checkin', methods=['POST'])
+@check_auth_header
 def checkin_to_toolshed():
     assert request.method == 'POST'
     toolshed_checkin = request.json
@@ -201,6 +230,7 @@ def checkin_to_toolshed():
     return '', 200
 
 @app.route('/inventory/api/v1.0/users/<string:user_id>/toolshed-checkout-outstanding', methods=['GET'])
+@check_auth_header
 def get_items_checked_out_by_user(user_id):
     con = sqlite3.connect(db_name)
     con.row_factory = row_to_item_factory
@@ -212,6 +242,7 @@ def get_items_checked_out_by_user(user_id):
     return jsonify(list(items))
 
 @app.route('/inventory/api/v1.0/users-toolshed-checkout-outstanding', methods=['GET'])
+@check_auth_header
 def get_users_with_outstanding_toolshed_checkouts():
     con = sqlite3.connect(db_name)
     con.row_factory = lambda cursor, row: User(*row)
@@ -223,6 +254,7 @@ def get_users_with_outstanding_toolshed_checkouts():
     return jsonify(list(users))
 
 @app.route('/inventory/api/v1.0/users/<string:barcode_id>', methods=['GET'])
+@check_auth_header
 def get_user(barcode_id):
     con = sqlite3.connect(db_name)
     con.row_factory = lambda cursor, row: User(*row)
@@ -234,6 +266,7 @@ def get_user(barcode_id):
     return retval
 
 @app.route('/inventory/api/v1.0/user-picture/<string:user_id>', methods=['GET'])
+@check_auth_header
 def get_user_picture(user_id):
     con = sqlite3.connect(db_name)
     cur = con.cursor()
@@ -242,6 +275,7 @@ def get_user_picture(user_id):
     return send_from_directory(picture_directory, picture_path)
 
 @app.route('/inventory/api/v1.0/user-picture/<string:user_id>', methods=['POST'])
+@check_auth_header
 def uploadUserPicture(user_id):
     assert request.method == 'POST'
     unique_filename = str(uuid.uuid4())
@@ -254,6 +288,7 @@ def uploadUserPicture(user_id):
     return '', 200
 
 @app.route('/inventory/api/v1.0/user-checkin/<string:user_id>', methods=['POST'])
+@check_auth_header
 def checkin_user(user_id):
     assert request.method == 'POST'
     unix_time = int(time.time())
@@ -264,6 +299,7 @@ def checkin_user(user_id):
     return '', 200
 
 @app.route('/inventory/api/v1.0/user-checkout/<string:user_id>', methods=['POST'])
+@check_auth_header
 def checkout_user(user_id):
     assert request.method == 'POST'
     unix_time = int(time.time())
@@ -274,7 +310,11 @@ def checkout_user(user_id):
     return '', 200
 
 if __name__ == '__main__':
-    assert len(sys.argv) == 3
+    assert len(sys.argv) == 6
     db_name = sys.argv[1]
     picture_directory = sys.argv[2]
+    auth_value = open(sys.argv[3], 'r').read().strip()
+    cert=sys.argv[4]
+    key=sys.argv[5]
     app.run(host='0.0.0.0', debug=True)
+    #app.run(host='0.0.0.0', debug=True, ssl_context=(cert, key))
