@@ -248,7 +248,7 @@ def get_users_with_outstanding_toolshed_checkouts():
     con = sqlite3.connect(db_name)
     con.row_factory = lambda cursor, row: User(*row)
     cur = con.cursor()
-    users = cur.execute('SELECT users.* FROM toolshed_checkouts \
+    users = cur.execute('SELECT DISTINCT users.* FROM toolshed_checkouts \
             LEFT JOIN toolshed_checkins ON toolshed_checkouts.checkout_id = toolshed_checkins.checkout_id \
             INNER JOIN users ON toolshed_checkouts.user_id = users.barcode_id \
             WHERE toolshed_checkins.checkout_id IS NULL')
