@@ -37,6 +37,7 @@ class User:
     name: str
     company: str
     picture_path: str
+    user_type: str
     description: str
 
 @dataclass
@@ -306,6 +307,18 @@ def checkout_user(user_id):
     con = sqlite3.connect(db_name)
     cur = con.cursor()
     cur.execute('INSERT OR REPLACE INTO user_checkouts (user_id, unix_time) VALUES (:user_id, :unix_time)', {'user_id': user_id, 'unix_time': unix_time})
+    con.commit()
+    return '', 200
+
+@app.route('/inventory/api/v1.0/users/', methods=['POST'])
+@check_auth_header
+def create_user_without_picture():
+    assert request.method == 'POST'
+    con = sqlite3.connect(db_name)
+    cur = con.cursor()
+    user = request.json
+    user = User(**user)
+    cur.execute('INSERT OR REPLACE INTO users (barcode_id, name, company, user_type, description) VALUES (:barcode_id, :name, :company, :user_type, :description)', asdict(user))
     con.commit()
     return '', 200
 
