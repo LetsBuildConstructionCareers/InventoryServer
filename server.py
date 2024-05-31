@@ -39,6 +39,7 @@ class User:
     picture_path: str
     user_type: str
     description: str
+    initial_checkin_info: str
 
 @dataclass
 class ToolshedCheckout:
@@ -318,7 +319,7 @@ def create_user_without_picture():
     cur = con.cursor()
     user = request.json
     user = User(**user)
-    cur.execute('INSERT OR REPLACE INTO users (barcode_id, name, company, user_type, description) VALUES (:barcode_id, :name, :company, :user_type, :description)', asdict(user))
+    cur.execute('INSERT OR REPLACE INTO users (barcode_id, name, company, user_type, description, initial_checkin_info) VALUES (:barcode_id, :name, :company, :user_type, :description, :initial_checkin_info)', asdict(user))
     con.commit()
     return '', 200
 

@@ -12,7 +12,8 @@ CREATE TABLE users (
     company STRING,
     picture_path STRING,
     user_type STRING,
-    description TEXT
+    description TEXT,
+    initial_checkin_info TEXT
 );
 
 CREATE TABLE user_checkins (
