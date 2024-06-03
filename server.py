@@ -192,6 +192,76 @@ def remove_item_from_container(container_id, item_id):
     con.commit()
     return '', 200
 
+@app.route('/inventory/api/v1.0/vehicles/<string:container_id>', methods=['GET'])
+@check_auth_header
+def get_items_in_vehicles(container_id):
+    assert request.method == 'GET'
+    con = sqlite3.connect(db_name)
+    con.row_factory = lambda cursor, row: Item(*row)
+    cur = con.cursor()
+    items = cur.execute('SELECT items.* FROM items INNER JOIN vehicles ON items.barcode_id = vehicles.item_id WHERE container_id = ?', (container_id,))
+    return jsonify(list(items))
+
+@app.route('/inventory/api/v1.0/vehicles/<string:container_id>', methods=['POST'])
+@check_auth_header
+def add_items_to_vehicle(container_id):
+    assert request.method == 'POST'
+    item_ids = request.json
+    assert len(item_ids) >= 1
+    con = sqlite3.connect(db_name)
+    cur = con.cursor()
+    assert does_item_exist(cur, container_id)
+    for item_id in item_ids:
+        assert does_item_exist(cur, item_id)
+        cur.execute('INSERT OR REPLACE INTO vehicles (container_id, item_id) VALUES (:container_id, :item_id)', {'container_id': container_id, 'item_id': item_id})
+    con.commit()
+    return '', 200
+
+@app.route('/inventory/api/v1.0/vehicles/<string:container_id>/<string:item_id>', methods=['DELETE'])
+@check_auth_header
+def remove_item_from_vehicle(container_id, item_id):
+    assert request.method == 'DELETE'
+    con = sqlite3.connect(db_name)
+    cur = con.cursor()
+    cur.execute('DELETE FROM vehicles WHERE container_id = :container_id AND item_id = :item_id', {'container_id': container_id, 'item_id': item_id})
+    con.commit()
+    return '', 200
+
+@app.route('/inventory/api/v1.0/locations/<string:container_id>', methods=['GET'])
+@check_auth_header
+def get_items_in_location(container_id):
+    assert request.method == 'GET'
+    con = sqlite3.connect(db_name)
+    con.row_factory = lambda cursor, row: Item(*row)
+    cur = con.cursor()
+    items = cur.execute('SELECT items.* FROM items INNER JOIN locations ON items.barcode_id = locations.item_id WHERE container_id = ?', (container_id,))
+    return jsonify(list(items))
+
+@app.route('/inventory/api/v1.0/locations/<string:container_id>', methods=['POST'])
+@check_auth_header
+def add_items_to_location(container_id):
+    assert request.method == 'POST'
+    item_ids = request.json
+    assert len(item_ids) >= 1
+    con = sqlite3.connect(db_name)
+    cur = con.cursor()
+    assert does_item_exist(cur, container_id)
+    for item_id in item_ids:
+        assert does_item_exist(cur, item_id)
+        cur.execute('INSERT OR REPLACE INTO locations (container_id, item_id) VALUES (:container_id, :item_id)', {'container_id': container_id, 'item_id': item_id})
+    con.commit()
+    return '', 200
+
+@app.route('/inventory/api/v1.0/locations/<string:container_id>/<string:item_id>', methods=['DELETE'])
+@check_auth_header
+def remove_item_from_location(container_id, item_id):
+    assert request.method == 'DELETE'
+    con = sqlite3.connect(db_name)
+    cur = con.cursor()
+    cur.execute('DELETE FROM locations WHERE container_id = :container_id AND item_id = :item_id', {'container_id': container_id, 'item_id': item_id})
+    con.commit()
+    return '', 200
+
 @app.route('/inventory/api/v1.0/toolshed-checkout', methods=['POST'])
 @check_auth_header
 def checkout_from_toolshed():
@@ -212,7 +282,7 @@ def get_last_outstanding_checkout(barcode_id):
     con = sqlite3.connect(db_name)
     con.row_factory = lambda cursor, row: ToolshedCheckout(*row)
     cur = con.cursor()
-    res = cur.execute('SELECT toolshed_checkouts.* FROM toolshed_checkouts LEFT JOIN toolshed_checkins ON toolshed_checkouts.checkout_id = toolshed_checkins.checkout_id WHERE toolshed_checkins.checkout_id IS NULL AND toolshed_checkouts.item_id = ? AND toolshed_checkouts.checkout_id = (SELECT checkout_id FROM toolshed_checkouts ORDER BY unix_time DESC LIMIT 1)', (barcode_id,))
+    res = cur.execute('SELECT toolshed_checkouts.* FROM toolshed_checkouts LEFT JOIN toolshed_checkins ON toolshed_checkouts.checkout_id = toolshed_checkins.checkout_id WHERE toolshed_checkins.checkout_id IS NULL AND toolshed_checkouts.item_id = :item_id AND toolshed_checkouts.checkout_id = (SELECT checkout_id FROM toolshed_checkouts WHERE item_id = :item_id ORDER BY unix_time DESC LIMIT 1)', {'item_id': barcode_id})
     outstanding_checkout = res.fetchone()
     print(outstanding_checkout)
     return jsonify(outstanding_checkout)
