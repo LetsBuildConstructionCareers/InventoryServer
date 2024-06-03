@@ -21,6 +21,12 @@ class Item:
     picture_path: str
     description: str
 
+@dataclass
+class FullLocation:
+    container_path: list[str]
+    vehicle: Optional[str] = None
+    location: Optional[str] = None
+
 def adapt_item(item):
     return f'{item.barcode_id};{item.short_id};{item.name};{item.picture_path};{item.description}'
 
@@ -134,20 +140,36 @@ def upload_item(barcode_id):
     con.commit()
     return '', 200
 
+@app.route('/inventory/api/v1.0/full-location/<string:item_id>', methods=['GET'])
+@check_auth_header
 def get_full_location_of_item(item_id):
+    container_path = get_full_container_path_of_item(item_id)
+    con = sqlite3.connect(db_name)
+    cur = con.cursor()
+    res = cur.execute('SELECT container_id FROM locations WHERE item_id = ?', (item_id,))
+    container_ids = res.fetchone()
+    if container_ids is not None and len(container_ids) > 0:
+        return jsonify(FullLocation(container_path, location = container_ids[0]))
+    res = cur.execute('SELECT container_id FROM vehicles WHERE item_id = ?', (item_id,))
+    container_ids = res.fetchone()
+    if container_ids is not None and len(container_ids) > 0:
+        return jsonify(FullLocation(container_path, vehicle = container_ids[0]))
+    return jsonify(FullLocation(container_path))
+
+def get_full_container_path_of_item(item_id):
     con = sqlite3.connect(db_name)
     cur = con.cursor()
     res = cur.execute('SELECT container_id FROM containers WHERE item_id = ?', (item_id,))
     container_ids = res.fetchone()
     if container_ids is not None and len(container_ids) > 0:
-        return [container_ids[0]] + get_full_location_of_item(container_ids[0])
+        return [container_ids[0]] + get_full_container_path_of_item(container_ids[0])
     else:
         return []
 
 @app.route('/inventory/api/v1.0/item-parent/<string:item_id>', methods=['GET'])
 @check_auth_header
 def get_parent_of_item(item_id):
-    full_location = get_full_location_of_item(item_id)
+    full_location = get_full_container_path_of_item(item_id)
     if len(full_location) == 0:
         return jsonify('')
     container_id = full_location[0]
