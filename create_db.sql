@@ -72,6 +72,3 @@ CREATE TABLE events (
     device_id STRING,
     description TEXT
 );
-
-INSERT INTO items (barcode_id, picture_path) VALUES ("12-34", "picture");
-INSERT INTO items (barcode_id, picture_path) VALUES ("9780913836316", "picture of book");
