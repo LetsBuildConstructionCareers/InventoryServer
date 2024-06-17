@@ -94,6 +94,45 @@ def check_auth_header(func):
         return func(*args, **kwargs)
     return decorated_func
 
+@app.route('/inventory/api/v1.0/registered-devices/<string:android_id>', methods=['GET'])
+@check_auth_header
+def get_registered_device_id(android_id):
+    con = sqlite3.connect(db_name)
+    cur = con.cursor()
+    res = cur.execute('SELECT barcode_id FROM registered_devices WHERE android_id = ?', (android_id,))
+    maybe_barcode_id = res.fetchone()
+    if maybe_barcode_id is not None and len(maybe_barcode_id) > 0:
+        return jsonify(maybe_barcode_id[0])
+    else:
+        abort(404)
+
+@app.route('/inventory/api/v1.0/unregistered-devices/', methods=['GET'])
+@check_auth_header
+def get_unregistered_devices():
+    con = sqlite3.connect(db_name)
+    con.row_factory = lambda cursor, row: str(*row)
+    cur = con.cursor()
+    android_ids = cur.execute('SELECT android_id FROM registered_devices WHERE barcode_id IS NULL')
+    return jsonify(list(android_ids))
+
+@app.route('/inventory/api/v1.0/unregistered-devices/<string:android_id>', methods=['PUT'])
+@check_auth_header
+def upload_device_id(android_id):
+    con = sqlite3.connect(db_name)
+    cur = con.cursor()
+    cur.execute('INSERT OR REPLACE INTO registered_devices (android_id) VALUES (:android_id)', {'android_id': android_id})
+    con.commit()
+    return '', 200
+
+@app.route('/inventory/api/v1.0/registered-devices/<string:android_id>/<string:barcode_id>', methods=['POST'])
+@check_auth_header
+def register_device_id(android_id, barcode_id):
+    con = sqlite3.connect(db_name)
+    cur = con.cursor()
+    cur.execute('UPDATE registered_devices SET barcode_id = :barcode_id WHERE android_id = :android_id', {'android_id': android_id, 'barcode_id': barcode_id})
+    con.commit()
+    return '', 200
+
 @app.route('/inventory/api/v1.0/items', methods=['GET'])
 @check_auth_header
 def get_items():

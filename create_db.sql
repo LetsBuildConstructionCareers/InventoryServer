@@ -6,6 +6,11 @@ CREATE TABLE items (
     description TEXT
 );
 
+CREATE TABLE registered_devices (
+    android_id STRING PRIMARY KEY,
+    barcode_id STRING
+);
+
 CREATE TABLE users (
     barcode_id STRING PRIMARY KEY,
     name STRING,
