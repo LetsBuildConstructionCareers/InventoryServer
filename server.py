@@ -442,6 +442,15 @@ def checkout_user(user_id):
     con.commit()
     return '', 200
 
+@app.route('/inventory/api/v1.0/users-checkedin/', methods=['GET'])
+def get_checked_in_users():
+    con = sqlite3.connect(db_name)
+    con.row_factory = lambda cursor, row: User(*row)
+    cur = con.cursor()
+    users = cur.execute('SELECT users.* FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY unix_time DESC) AS row_num FROM (SELECT "checkin" AS type, * FROM user_checkins UNION SELECT "checkout" AS type, * FROM user_checkouts)) INNER JOIN users ON user_id = barcode_id WHERE row_num == 1 AND type == "checkin"')
+    users = list(users)
+    return jsonify(users)
+
 @app.route('/inventory/api/v1.0/users/', methods=['POST'])
 @check_auth_header
 def create_user_without_picture():
