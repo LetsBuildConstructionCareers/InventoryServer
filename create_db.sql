@@ -46,6 +46,21 @@ CREATE TABLE locations (
     item_id STRING
 );
 
+CREATE TABLE inventory_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    start_unix_time INTEGER,
+    complete_unix_time INTEGER,
+    notes STRING
+);
+
+CREATE TABLE inventoried_items (
+    inventory_id INTEGER,
+    item_id STRING,
+    status STRING,
+    notes STRING,
+    UNIQUE(inventory_id, item_id) ON CONFLICT REPLACE
+);
+
 CREATE TABLE toolshed_checkouts (
     checkout_id INTEGER PRIMARY KEY AUTOINCREMENT,
     item_id STRING,

@@ -1,4 +1,5 @@
 from dataclasses import asdict, dataclass
+from enum import Enum
 from flask import Flask, jsonify, request, send_from_directory, abort
 from functools import wraps
 from typing import Optional
@@ -64,6 +65,28 @@ class ToolshedCheckin:
     unix_time: Optional[int] = None
     override_justification: Optional[str] = None
     description: Optional[str] = None
+
+@dataclass
+class InventoryEvent:
+    id: int
+    start_unix_time: int
+    complete_unix_time: Optional[int] = None
+    notes: Optional[str] = None
+
+class InventoryStatus(Enum):
+    GOOD = "GOOD"
+    MISSING = "MISSING"
+    WRONG_LOCATION = "WRONG_LOCATION"
+    NEW_ITEM = "NEW_ITEM"
+    DAMAGED = "DAMAGED"
+    OTHER = "OTHER"
+
+@dataclass
+class InventoriedItem:
+    inventory_id: int
+    item_id: str
+    status: str
+    notes: Optional[str] = None
 
 def adapt_user(user):
     return f"{user.barcode_id};{user.name};{user.company};{user.description}"
@@ -218,6 +241,15 @@ def does_item_exist(sql_cursor, barcode_id):
     res = sql_cursor.execute('SELECT count(*) FROM items WHERE barcode_id = ?', (barcode_id,))
     return res.fetchone()[0] > 0
 
+@app.route('/inventory/api/v1.0/items-not-in-containers', methods=['GET'])
+@check_auth_header
+def get_all_items_not_in_containers():
+    con = sqlite3.connect(db_name)
+    con.row_factory = row_to_item_factory
+    cur = con.cursor()
+    items = cur.execute('SELECT items.* FROM items LEFT JOIN containers ON barcode_id = item_id WHERE container_id IS NULL')
+    return jsonify(list(items))
+
 @app.route('/inventory/api/v1.0/containers/<string:container_id>', methods=['GET'])
 @check_auth_header
 def get_items_in_container(container_id):
@@ -320,6 +352,77 @@ def remove_item_from_location(container_id, item_id):
     con = sqlite3.connect(db_name)
     cur = con.cursor()
     cur.execute('DELETE FROM locations WHERE container_id = :container_id AND item_id = :item_id', {'container_id': container_id, 'item_id': item_id})
+    con.commit()
+    return '', 200
+
+@app.route('/inventory/api/v1.0/inventory-events', methods=['GET'])
+@check_auth_header
+def get_inventory_events():
+    con = sqlite3.connect(db_name)
+    con.row_factory = lambda cursor, row: InventoryEvent(*row)
+    cur = con.cursor()
+    inventory_events = cur.execute('SELECT * FROM inventory_events')
+    return jsonify(list(inventory_events))
+
+@app.route('/inventory/api/v1.0/inventory-events', methods=['POST'])
+@check_auth_header
+def create_new_inventory_event():
+    con = sqlite3.connect(db_name)
+    con.row_factory = lambda cursor, row: InventoryEvent(*row)
+    cur = con.cursor()
+    current_time = int(time.time())
+    cur.execute('INSERT INTO inventory_events (start_unix_time) VALUES (:current_time)', {'current_time': current_time})
+    con.commit()
+    res = cur.execute('SELECT * FROM inventory_events WHERE start_unix_time = :current_time', {'current_time': current_time})
+    id = res.fetchone()
+    print(id)
+    return jsonify(id)
+
+@app.route('/inventory/api/v1.0/inventoried-items-not-in-containers/<int:inventory_id>', methods=['GET'])
+@check_auth_header
+def get_all_inventoried_items_not_in_containers(inventory_id):
+    con = sqlite3.connect(db_name)
+    con.row_factory = lambda cursor, row: InventoriedItem(*row)
+    cur = con.cursor()
+    inventoried_items = cur.execute('SELECT inventoried_items.* FROM inventoried_items LEFT JOIN containers ON inventoried_items.item_id = containers.item_id WHERE container_id IS NULL AND inventory_id = :inventory_id', {'inventory_id': inventory_id})
+    return jsonify(list(inventoried_items))
+
+@app.route('/inventory/api/v1.0/inventoried-items-in-container/<int:inventory_id>/<string:container_id>', methods=['GET'])
+@check_auth_header
+def get_all_inventoried_items_in_container(inventory_id, container_id):
+    assert request.method == 'GET'
+    con = sqlite3.connect(db_name)
+    con.row_factory = lambda cursor, row: InventoriedItem(*row)
+    cur = con.cursor()
+    items = cur.execute('SELECT inventoried_items.* FROM inventoried_items INNER JOIN containers ON inventoried_items.item_id = containers.item_id WHERE container_id = :container_id AND inventory_id = :inventory_id', {'container_id': container_id, 'inventory_id': inventory_id})
+    return jsonify(list(items))
+
+@app.route('/inventory/api/v1.0/inventoried-items-not-good/<int:inventory_id>', methods=['GET'])
+@check_auth_header
+def get_all_not_good_inventoried_items(inventory_id):
+    con = sqlite3.connect(db_name)
+    con.row_factory = lambda cursor, row: InventoriedItem(*row)
+    cur = con.cursor()
+    inventoried_items = cur.execute('SELECT * FROM inventoried_items WHERE status != :good_inventory_status AND inventory_id = :inventory_id', {'good_inventory_status': InventoryStatus.GOOD, 'inventory_id': inventory_id})
+    return jsonify(list(inventoried_items))
+
+@app.route('/inventory/api/v1.0/inventoried-items/<int:inventory_id>/<string:item_id>', methods=['GET'])
+@check_auth_header
+def get_inventoried_item(inventory_id, item_id):
+    con = sqlite3.connect(db_name)
+    con.row_factory = lambda cursor, row: InventoriedItem(*row)
+    cur = con.cursor()
+    inventoried_item = cur.execute('SELECT * FROM inventoried_items WHERE inventory_id = :inventory_id AND item_id = :item_id', {'inventory_id': inventory_id, 'item_id': item_id})
+    inventoried_item = inventoried_item.fetchone()
+    return jsonify(inventoried_item)
+
+@app.route('/inventory/api/v1.0/inventoried-items', methods=['POST'])
+@check_auth_header
+def add_inventoried_item():
+    inventoried_item = InventoriedItem(**request.json)
+    con = sqlite3.connect(db_name)
+    cur = con.cursor()
+    cur.execute('INSERT OR REPLACE INTO inventoried_items (inventory_id, item_id, status, notes) VALUES (:inventory_id, :item_id, :status, :notes)', asdict(inventoried_item))
     con.commit()
     return '', 200
 
