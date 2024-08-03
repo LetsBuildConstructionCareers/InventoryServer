@@ -163,7 +163,7 @@ def get_items():
     con.row_factory = row_to_item_factory
     cur = con.cursor()
     item_list = cur.execute('SELECT * FROM items;')
-    return jsonify({'items': item_list})
+    return jsonify(list(item_list))
 
 @app.route('/inventory/api/v1.0/items/<string:barcode_id>', methods=['GET'])
 @check_auth_header
@@ -397,13 +397,25 @@ def get_all_inventoried_items_in_container(inventory_id, container_id):
     items = cur.execute('SELECT inventoried_items.* FROM inventoried_items INNER JOIN containers ON inventoried_items.item_id = containers.item_id WHERE container_id = :container_id AND inventory_id = :inventory_id', {'container_id': container_id, 'inventory_id': inventory_id})
     return jsonify(list(items))
 
+@app.route('/inventory/api/v1.0/inventoried-items-uninventoried/<int:inventory_id>', methods=['GET'])
+@check_auth_header
+def get_all_uninventoried_items(inventory_id):
+    con = sqlite3.connect(db_name)
+    con.row_factory = lambda cursor, row: Item(*row)
+    cur = con.cursor()
+    items = cur.execute(
+    'SELECT items.* FROM items INNER JOIN (SELECT barcode_id AS id FROM items EXCEPT SELECT item_id AS id FROM inventoried_items WHERE inventory_id = :inventory_id) ON barcode_id = id',
+    {'inventory_id': inventory_id})
+    return jsonify(list(items))
+
 @app.route('/inventory/api/v1.0/inventoried-items-not-good/<int:inventory_id>', methods=['GET'])
 @check_auth_header
 def get_all_not_good_inventoried_items(inventory_id):
     con = sqlite3.connect(db_name)
     con.row_factory = lambda cursor, row: InventoriedItem(*row)
     cur = con.cursor()
-    inventoried_items = cur.execute('SELECT * FROM inventoried_items WHERE status != :good_inventory_status AND inventory_id = :inventory_id', {'good_inventory_status': InventoryStatus.GOOD, 'inventory_id': inventory_id})
+    inventoried_items = cur.execute('SELECT * FROM inventoried_items WHERE status != :good_inventory_status AND inventory_id = :inventory_id',
+            {'good_inventory_status': InventoryStatus.GOOD.value, 'inventory_id': inventory_id})
     return jsonify(list(inventoried_items))
 
 @app.route('/inventory/api/v1.0/inventoried-items/<int:inventory_id>/<string:item_id>', methods=['GET'])
