@@ -378,6 +378,17 @@ def create_new_inventory_event():
     print(id)
     return jsonify(id)
 
+@app.route('/inventory/api/v1.0/inventory-events', methods=['PATCH'])
+@check_auth_header
+def update_inventory_event_complete_time_and_notes():
+    inventory_event = InventoryEvent(**request.json)
+    con = sqlite3.connect(db_name)
+    cur = con.cursor()
+    cur.execute('UPDATE inventory_events SET complete_unix_time = :complete_unix_time, notes = :notes WHERE id = :id',
+            {'id': inventory_event.id, 'complete_unix_time': inventory_event.complete_unix_time, 'notes': inventory_event.notes})
+    con.commit()
+    return '', 200
+
 @app.route('/inventory/api/v1.0/inventoried-items-not-in-containers/<int:inventory_id>', methods=['GET'])
 @check_auth_header
 def get_all_inventoried_items_not_in_containers(inventory_id):
